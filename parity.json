@@ -1,0 +1,10 @@
+{
+  "repo": "pdfkit",
+  "upstream": "foliojs/pdfkit",
+  "parityBefore": "19%",
+  "parityAfter": "100%",
+  "upstreamCasesSynced": 58,
+  "gapsFound": 47,
+  "gapsClosed": 47,
+  "asOf": "2026-07-18"
+}
