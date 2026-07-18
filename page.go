@@ -2,7 +2,9 @@ package pdfkit
 
 import (
 	"bytes"
+	"fmt"
 	"strconv"
+	"strings"
 )
 
 // Page is a single page of a Document and the surface onto which text, vector
@@ -23,16 +25,26 @@ type Page struct {
 	curSize     float64
 
 	// resources actually referenced by this page's content stream
-	usedFonts  map[string]*Font
-	usedImages map[string]*Image
+	usedFonts    map[string]*Font
+	usedImages   map[string]*Image
+	usedShadings map[string]*Shading
+	usedPatterns map[string]*Pattern
+	usedGStates  map[string]*ExtGState
+
+	// annots holds link and other annotations placed on this page. Form field
+	// widgets are collected separately from the document's AcroForm.
+	annots []*annotation
 }
 
 func newPage(d *Document, size PageSize) *Page {
 	return &Page{
-		doc:        d,
-		size:       size,
-		usedFonts:  map[string]*Font{},
-		usedImages: map[string]*Image{},
+		doc:          d,
+		size:         size,
+		usedFonts:    map[string]*Font{},
+		usedImages:   map[string]*Image{},
+		usedShadings: map[string]*Shading{},
+		usedPatterns: map[string]*Pattern{},
+		usedGStates:  map[string]*ExtGState{},
 	}
 }
 
@@ -163,8 +175,27 @@ func (p *Page) DrawText(x, y float64, text string) {
 	p.buf.WriteString("BT\n")
 	p.buf.WriteString("/" + p.curFontName + " " + f2s(p.curSize) + " Tf\n")
 	p.buf.WriteString(f2s(x) + " " + f2s(y) + " Td\n")
-	p.buf.WriteString("(" + escapeString(text) + ") Tj\n")
+	p.buf.WriteString(p.showText(text) + " Tj\n")
 	p.buf.WriteString("ET\n")
+}
+
+// showText renders text as the appropriate PDF string operand for the current
+// font: a WinAnsi literal string for standard fonts, or a hex string of 2-byte
+// glyph identifiers (Identity-H) for an embedded font, marking each glyph used
+// for subsetting.
+func (p *Page) showText(text string) string {
+	if p.curFont.embedded == nil {
+		return "(" + escapeString(text) + ")"
+	}
+	tf := p.curFont.embedded
+	var b strings.Builder
+	b.WriteByte('<')
+	for _, r := range text {
+		gid := tf.mark(r)
+		fmt.Fprintf(&b, "%04X", gid)
+	}
+	b.WriteByte('>')
+	return b.String()
 }
 
 // TextWidth returns the width in points of text in the current font and size.
@@ -217,8 +248,11 @@ func (p *Page) content() []byte { return p.buf.Bytes() }
 
 // resource name helpers -----------------------------------------------------
 
-func fontResourceName(idx int) string  { return "F" + strconv.Itoa(idx+1) }
-func imageResourceName(idx int) string { return "Im" + strconv.Itoa(idx+1) }
+func fontResourceName(idx int) string    { return "F" + strconv.Itoa(idx+1) }
+func imageResourceName(idx int) string   { return "Im" + strconv.Itoa(idx+1) }
+func shadingResourceName(idx int) string { return "Sh" + strconv.Itoa(idx+1) }
+func patternResourceName(idx int) string { return "P" + strconv.Itoa(idx+1) }
+func gstateResourceName(idx int) string  { return "GS" + strconv.Itoa(idx+1) }
 
 // wrapText greedily wraps text into lines that fit within maxWidth points for
 // the given font and size. Existing newlines force line breaks.

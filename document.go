@@ -25,6 +25,34 @@ type Document struct {
 	// images is the ordered set of images used in the document; a resource
 	// name /Im1, /Im2, ... is derived from the index.
 	images []*Image
+
+	// fontPtr de-duplicates fonts by pointer identity so that embedded fonts
+	// (which may share a BaseFont subset name) are not merged.
+	fontPtr map[*Font]int
+
+	// shadings, patterns and extGStates are the ordered, de-duplicated sets of
+	// each advanced resource type; the slice index yields a resource name
+	// (/Sh1, /P1, /GS1, ...).
+	shadings   []*Shading
+	shadingPtr map[*Shading]int
+	patterns   []*Pattern
+	patternPtr map[*Pattern]int
+	extGStates []*ExtGState
+	gstatePtr  map[*ExtGState]int
+
+	// outline is the optional document outline (bookmark tree) root.
+	outline *Outline
+	// namedDests holds named destinations, in insertion order.
+	namedDests []namedDest
+	// acroFields holds interactive form fields; a non-empty slice causes an
+	// /AcroForm dictionary to be emitted and referenced from the catalog.
+	acroFields []*FormField
+
+	// xmp, when non-empty, is emitted as an XMP metadata stream referenced from
+	// the catalog via /Metadata.
+	xmp string
+	// enc holds the encryption configuration, or nil for an unencrypted file.
+	enc *encryptConfig
 }
 
 // New creates an empty document with default metadata (a Producer/Creator of
@@ -35,7 +63,11 @@ func New() *Document {
 			"Producer": "pdfkit",
 			"Creator":  "pdfkit",
 		},
-		fontIndex: map[string]int{},
+		fontIndex:  map[string]int{},
+		fontPtr:    map[*Font]int{},
+		shadingPtr: map[*Shading]int{},
+		patternPtr: map[*Pattern]int{},
+		gstatePtr:  map[*ExtGState]int{},
 	}
 }
 
@@ -69,15 +101,49 @@ func (d *Document) AddPage(size PageSize) *Page {
 func (d *Document) PageCount() int { return len(d.pages) }
 
 // registerFont records a font as used by the document and returns its resource
-// name (e.g. "F1"). Repeated calls for the same base font share a name.
+// name (e.g. "F1"). Repeated calls for the same font pointer share a name.
 func (d *Document) registerFont(f *Font) string {
-	if idx, ok := d.fontIndex[f.BaseFont]; ok {
+	if idx, ok := d.fontPtr[f]; ok {
 		return fontResourceName(idx)
 	}
 	idx := len(d.fonts)
 	d.fonts = append(d.fonts, f)
+	d.fontPtr[f] = idx
 	d.fontIndex[f.BaseFont] = idx
 	return fontResourceName(idx)
+}
+
+// registerShading records a shading and returns its resource name (e.g. "Sh1").
+func (d *Document) registerShading(s *Shading) string {
+	if idx, ok := d.shadingPtr[s]; ok {
+		return shadingResourceName(idx)
+	}
+	idx := len(d.shadings)
+	d.shadings = append(d.shadings, s)
+	d.shadingPtr[s] = idx
+	return shadingResourceName(idx)
+}
+
+// registerPattern records a pattern and returns its resource name (e.g. "P1").
+func (d *Document) registerPattern(p *Pattern) string {
+	if idx, ok := d.patternPtr[p]; ok {
+		return patternResourceName(idx)
+	}
+	idx := len(d.patterns)
+	d.patterns = append(d.patterns, p)
+	d.patternPtr[p] = idx
+	return patternResourceName(idx)
+}
+
+// registerGState records an ExtGState and returns its resource name (e.g. "GS1").
+func (d *Document) registerGState(g *ExtGState) string {
+	if idx, ok := d.gstatePtr[g]; ok {
+		return gstateResourceName(idx)
+	}
+	idx := len(d.extGStates)
+	d.extGStates = append(d.extGStates, g)
+	d.gstatePtr[g] = idx
+	return gstateResourceName(idx)
 }
 
 // registerImage records an image and returns its resource name (e.g. "Im1").

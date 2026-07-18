@@ -19,6 +19,9 @@ type Font struct {
 	defWidth int16
 	// fixed, when non-zero, is used for every glyph (monospaced Courier).
 	fixed int16
+	// embedded, when non-nil, holds a parsed TrueType/OpenType font that is
+	// embedded and subset rather than referenced as a standard font.
+	embedded *ttfFont
 }
 
 // The 14 standard fonts. These are always available in every conforming PDF
@@ -70,6 +73,9 @@ func StandardFont(name string) *Font {
 
 // glyphWidth returns the width of a single rune in 1000-unit glyph space.
 func (f *Font) glyphWidth(r rune) int16 {
+	if f.embedded != nil {
+		return int16(f.embedded.runeWidth1000(r))
+	}
 	if f.fixed != 0 {
 		return f.fixed
 	}
@@ -89,3 +95,7 @@ func (f *Font) Width(text string, size float64) float64 {
 	}
 	return float64(total) * size / 1000.0
 }
+
+// Embedded reports whether this font is an embedded, subset TrueType/OpenType
+// font (as opposed to one of the 14 standard fonts).
+func (f *Font) Embedded() bool { return f.embedded != nil }
